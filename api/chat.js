@@ -5,6 +5,7 @@ const API_MODELS = [
     'gemini-2.0-flash',
     'gemini-2.0-flash-lite'
 ];
+const ANTHROPIC_DEFAULT_MODEL = 'claude-opus-4-6-thinking';
 
 const SYSTEM_PROMPT = `Sen Solenz AI adında, Türkçe konuşan yardımcı bir yapay zeka asistanısın.
 Kısa, net, çözüm odaklı ve kullanıcıya yakın cevap ver.`;
@@ -41,6 +42,28 @@ function getApiKeys() {
         .split(/[,\n]+/)
         .map((key) => key.trim())
         .filter(Boolean);
+}
+
+function getAnthropicConfig() {
+    const baseUrl = (process.env.ANTHROPIC_BASE_URL || '').trim().replace(/\/+$/, '');
+    const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+    const model = (process.env.ANTHROPIC_MODEL || ANTHROPIC_DEFAULT_MODEL).trim();
+    const maxTokens = Number(process.env.ANTHROPIC_MAX_TOKENS || 4096);
+
+    if (!baseUrl || !apiKey || !model) return null;
+
+    const isLocalOnlyUrl = /^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/i.test(baseUrl);
+    if (process.env.VERCEL && isLocalOnlyUrl) {
+        console.warn('ANTHROPIC_BASE_URL localhost olarak ayarlı; Vercel bu adrese erişemez, Anthropic brain atlanıyor.');
+        return null;
+    }
+
+    return {
+        baseUrl,
+        apiKey,
+        model,
+        maxTokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 4096
+    };
 }
 
 function normalizeSkills(skills) {
@@ -393,6 +416,52 @@ async function callGemini({ apiKey, modelName, message }) {
     };
 }
 
+async function callAnthropicBrain({ config, message }) {
+    const messagesUrl = config.baseUrl.endsWith('/v1')
+        ? `${config.baseUrl}/messages`
+        : `${config.baseUrl}/v1/messages`;
+
+    const response = await fetch(messagesUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': config.apiKey,
+            Authorization: `Bearer ${config.apiKey}`,
+            'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+            model: config.model,
+            max_tokens: config.maxTokens,
+            system: SYSTEM_PROMPT,
+            messages: [
+                {
+                    role: 'user',
+                    content: message
+                }
+            ]
+        })
+    });
+
+    const data = await response.json().catch(() => ({}));
+    const text = Array.isArray(data.content)
+        ? data.content
+            .map((part) => part?.text || '')
+            .filter(Boolean)
+            .join('\n')
+            .trim()
+        : data.completion || data.text || '';
+
+    if (response.ok && text) {
+        return { ok: true, text };
+    }
+
+    return {
+        ok: false,
+        status: response.status,
+        errorMessage: data?.error?.message || data?.message || `Anthropic brain HTTP ${response.status}`
+    };
+}
+
 module.exports = async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -414,8 +483,9 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ text: 'Mesajını yaz, hemen cevaplayayım.' });
     }
 
+    const anthropicConfig = getAnthropicConfig();
     const apiKeys = getApiKeys();
-    if (apiKeys.length === 0) {
+    if (!anthropicConfig && apiKeys.length === 0) {
         return res.status(200).json({
             text: createFallbackAnswer(message, skills),
             offline: true
@@ -424,6 +494,41 @@ module.exports = async function handler(req, res) {
 
     const prompt = await buildPrompt({ message, skills });
     let lastError = '';
+
+    if (anthropicConfig) {
+        for (let retryCount = 0; retryCount < 2; retryCount++) {
+            try {
+                const result = await callAnthropicBrain({
+                    config: anthropicConfig,
+                    message: prompt
+                });
+
+                if (result.ok) {
+                    return res.status(200).json({
+                        text: result.text,
+                        provider: 'anthropic-compatible',
+                        model: anthropicConfig.model,
+                        skills
+                    });
+                }
+
+                lastError = result.errorMessage;
+                if (result.status >= 500 && retryCount === 0) {
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                    continue;
+                }
+                break;
+            } catch (error) {
+                lastError = error.message || 'Anthropic brain bağlantısı kurulamadı';
+                if (retryCount === 0) {
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                    continue;
+                }
+            }
+        }
+
+        console.warn('Anthropic brain yanıt vermedi, Gemini fallback deneniyor:', lastError);
+    }
 
     for (let keyIndex = 0; keyIndex < apiKeys.length; keyIndex++) {
         let moveToNextKey = false;
