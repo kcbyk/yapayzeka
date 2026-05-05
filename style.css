@@ -517,6 +517,7 @@ pre {
     color: var(--text-color);
     font-weight: 400;
     line-height: 1.6;
+    white-space: pre-wrap;
 }
 
 /* Input Area */

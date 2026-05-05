@@ -776,13 +776,19 @@ function extractSourceFact(source) {
     return truncateText(sentences.slice(0, 2).join(' '), 420);
 }
 
-function normalizeHeading(line = '') {
+function normalizeHeading(line = '', options = {}) {
     const cleanLine = sanitizePlainTextSegment(line)
         .replace(/^[-\d.\s]+/, '')
-        .replace(/:+$/, '')
+        .replace(/[?:]+$/, '')
         .trim();
 
-    return cleanLine ? `${cleanLine}:` : '';
+    if (!cleanLine) return '';
+
+    if (options.main) {
+        return /\bnedir\b/i.test(cleanLine) ? `${cleanLine}?` : cleanLine;
+    }
+
+    return `${cleanLine}:`;
 }
 
 function isLikelyHeading(line = '') {
@@ -864,14 +870,14 @@ function formatResearchBody(body = '', fallbackTitle = 'Araştırma Özeti') {
         if (!lines.length) continue;
 
         if (lines.length === 1 && isLikelyHeading(lines[0])) {
-            output.push(normalizeHeading(lines[0]));
+            output.push(normalizeHeading(lines[0], { main: !hasHeading }));
             output.push('');
             hasHeading = true;
             continue;
         }
 
         if (isLikelyHeading(lines[0])) {
-            output.push(normalizeHeading(lines[0]));
+            output.push(normalizeHeading(lines[0], { main: !hasHeading }));
             output.push('');
             appendBulletSection(output, lines.slice(1).join(' '));
             hasHeading = true;
@@ -879,7 +885,7 @@ function formatResearchBody(body = '', fallbackTitle = 'Araştırma Özeti') {
         }
 
         if (!hasHeading) {
-            output.push(`${fallbackTitle}:`);
+            output.push(fallbackTitle);
             output.push('');
             hasHeading = true;
         }
@@ -912,7 +918,7 @@ function formatResearchSources(sources = []) {
 }
 
 function createNoSourceResearchAnswer() {
-    return 'Araştırma Sonucu:\n\n- Web araması denendi ama bu istek için güvenilir kaynak alınamadı.\n- Bu yüzden kesin bilgi gibi konuşmuyorum.\n- Konuyu biraz daha net yazarsan yeniden arayabilirim.';
+    return 'Araştırma Sonucu\n\n- Web araması denendi ama bu istek için güvenilir kaynak alınamadı.\n- Bu yüzden kesin bilgi gibi konuşmuyorum.\n- Konuyu biraz daha net yazarsan yeniden arayabilirim.';
 }
 
 function createResearchAnswer(message, sources = []) {
@@ -944,11 +950,11 @@ function createResearchAnswer(message, sources = []) {
         : 'Güven notu: Kaynaklar yardımcı ama 100/100 resmi kaynak düzeyinde olmadığı için kesin hüküm gibi sunmuyorum.';
 
     return sanitizeAssistantText([
-        'Araştırma Özeti:',
+        'Araştırma Özeti',
         '',
         factLines.length ? factLines.join('\n') : '- Toplanan kaynaklarda kısa özet çıkarılabilecek sınırlı bilgi var.',
         '',
-        'Güven Notu:',
+        'Güven Notu',
         '',
         `- ${confidenceBullet.replace(/^Güven notu:\s*/i, '')}`,
         '',
