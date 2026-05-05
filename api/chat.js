@@ -15,6 +15,27 @@ const SKILL_LABELS = {
     'data-analysis': 'Veri Analizi'
 };
 
+const OFFICIAL_SOURCE_PATTERNS = [
+    /\.gov(\.|\/|$)/i,
+    /\.edu(\.|\/|$)/i,
+    /\.ac\./i,
+    /\.mil(\.|\/|$)/i,
+    /\.int(\.|\/|$)/i,
+    /(^|\.)who\.int$/i,
+    /(^|\.)un\.org$/i,
+    /(^|\.)europa\.eu$/i,
+    /(^|\.)nasa\.gov$/i,
+    /(^|\.)nih\.gov$/i,
+    /(^|\.)cdc\.gov$/i,
+    /(^|\.)developer\.mozilla\.org$/i,
+    /(^|\.)docs\./i,
+    /(^|\.)learn\.microsoft\.com$/i,
+    /(^|\.)cloud\.google\.com$/i,
+    /(^|\.)ai\.google\.dev$/i,
+    /(^|\.)vercel\.com$/i,
+    /(^|\.)github\.com$/i
+];
+
 function getApiKeys() {
     return (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '')
         .split(/[,\n]+/)
@@ -28,6 +49,62 @@ function normalizeSkills(skills) {
     return skills
         .map((skill) => String(skill || '').trim())
         .filter((skill, index, list) => SKILL_LABELS[skill] && list.indexOf(skill) === index);
+}
+
+function decodeHtml(value = '') {
+    return String(value)
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&#x27;/g, "'")
+        .replace(/&#x2F;/g, '/');
+}
+
+function stripHtml(value = '') {
+    return decodeHtml(String(value)
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim());
+}
+
+function getHostname(url) {
+    try {
+        return new URL(url).hostname.replace(/^www\./, '');
+    } catch (_) {
+        return '';
+    }
+}
+
+function getSourceScore(url) {
+    const hostname = getHostname(url);
+    if (!hostname) return 40;
+    if (OFFICIAL_SOURCE_PATTERNS.some((pattern) => pattern.test(hostname) || pattern.test(url))) return 100;
+    if (/\.org$/i.test(hostname)) return 85;
+    if (/wikipedia\.org$/i.test(hostname)) return 80;
+    if (/medium\.com$|blogspot\.|reddit\.com$|quora\.com$/i.test(hostname)) return 55;
+    return 70;
+}
+
+function sourceScoreLabel(score) {
+    if (score >= 100) return '100/100 resmi/otoriter kaynak';
+    if (score >= 85) return `${score}/100 yüksek güven`;
+    if (score >= 70) return `${score}/100 orta güven`;
+    return `${score}/100 düşük güven`;
+}
+
+function resolveDuckDuckGoUrl(url) {
+    try {
+        const parsed = new URL(decodeHtml(url), 'https://duckduckgo.com');
+        const uddg = parsed.searchParams.get('uddg');
+        return uddg ? decodeURIComponent(uddg) : parsed.href;
+    } catch (_) {
+        return url;
+    }
 }
 
 function flattenRelatedTopics(topics, output = []) {
@@ -86,28 +163,137 @@ async function fetchWebSearchResults(query) {
     }
 }
 
+async function fetchDuckDuckGoHtmlResults(query) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    try {
+        const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+        const response = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+                Accept: 'text/html',
+                'User-Agent': 'Mozilla/5.0 SolenzAI/1.0'
+            }
+        });
+
+        if (!response.ok) return [];
+
+        const html = await response.text();
+        const results = [];
+        const resultRegex = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+        let match;
+
+        while ((match = resultRegex.exec(html)) !== null && results.length < 8) {
+            const url = resolveDuckDuckGoUrl(match[1]);
+            results.push({
+                title: stripHtml(match[2]),
+                snippet: stripHtml(match[3]),
+                url
+            });
+        }
+
+        return results;
+    } catch (_) {
+        return [];
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+async function fetchSourcePage(result) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    try {
+        const response = await fetch(result.url, {
+            signal: controller.signal,
+            headers: {
+                Accept: 'text/html,application/xhtml+xml',
+                'User-Agent': 'Mozilla/5.0 SolenzAI/1.0'
+            }
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!response.ok || !contentType.includes('text/html')) {
+            return result;
+        }
+
+        const html = await response.text();
+        const title = stripHtml((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || result.title);
+        const metaDescription = stripHtml((html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) || [])[1] || '');
+        const paragraphText = Array.from(html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi))
+            .map((match) => stripHtml(match[1]))
+            .filter((text) => text.length > 60)
+            .slice(0, 4)
+            .join(' ');
+
+        return {
+            ...result,
+            title: title || result.title,
+            snippet: [metaDescription, paragraphText, result.snippet]
+                .filter(Boolean)
+                .join(' ')
+                .slice(0, 900)
+        };
+    } catch (_) {
+        return result;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+async function collectWebSources(query) {
+    const [htmlResults, instantResults] = await Promise.all([
+        fetchDuckDuckGoHtmlResults(query),
+        fetchWebSearchResults(query)
+    ]);
+
+    const seen = new Set();
+    const merged = [...htmlResults, ...instantResults]
+        .filter((result) => result.url && result.snippet)
+        .filter((result) => {
+            const key = result.url.replace(/#.*$/, '');
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
+        .slice(0, 8);
+
+    const enriched = await Promise.all(merged.slice(0, 5).map(fetchSourcePage));
+
+    return enriched
+        .map((result) => ({
+            ...result,
+            score: getSourceScore(result.url)
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5);
+}
+
 async function buildPrompt({ message, skills }) {
     const skillLines = [];
     const contextLines = [];
 
     if (skills.includes('web-search')) {
-        skillLines.push("- Web'de Derin Arama aktif: Güncel bilgi gerekiyorsa aşağıdaki web sonuçlarını kullan, kaynakları metin içinde belirt, emin olmadığın noktaları açıkça ayır.");
+        skillLines.push("- Web'de Derin Arama aktif: Aşağıdaki web kaynaklarını kullan. Cevabın sonunda mutlaka 'Kaynaklar' bölümü yaz; her kaynak için URL ve güven puanını belirt. Resmi/otoriter kaynak 100/100 değilse kesin konuşma; 'kaynak güveni sınırlı' diye belirt. Kaynak yoksa uydurma bilgi verme.");
 
-        const webResults = await fetchWebSearchResults(message);
+        const webResults = await collectWebSources(message);
         if (webResults.length > 0) {
-            contextLines.push('WEB ARAMA SONUÇLARI:');
+            contextLines.push('WEBDE GEZİLEREK TOPLANAN KAYNAKLAR:');
             webResults.forEach((result, index) => {
                 contextLines.push(`${index + 1}. ${result.title}`);
-                contextLines.push(`   Özet: ${result.snippet}`);
-                if (result.url) contextLines.push(`   Kaynak: ${result.url}`);
+                contextLines.push(`   Güven puanı: ${sourceScoreLabel(result.score)}`);
+                contextLines.push(`   Kaynak: ${result.url}`);
+                contextLines.push(`   Alınan bilgi: ${result.snippet}`);
             });
         } else {
-            contextLines.push('WEB ARAMA SONUÇLARI: Canlı aramada güvenilir sonuç bulunamadı; bunu kullanıcıya kısa ve dürüstçe belirt.');
+            contextLines.push('WEBDE GEZİLEREK TOPLANAN KAYNAKLAR: Güvenilir kaynak bulunamadı. Kullanıcıya kaynak bulunamadığını söyle ve kesin bilgi gibi sunma.');
         }
     }
 
     if (skills.includes('coding')) {
-        skillLines.push('- Yazılım Geliştirme aktif: Kod, hata ayıklama, mimari ve dosya değişikliği isteklerinde doğrudan uygulanabilir çözüm ver; gerekiyorsa kod bloğu, test adımı ve hata nedeni ekle.');
+        skillLines.push('- Yazılım Geliştirme aktif: Claude benzeri ama birebir taklit olmayan bir mühendislik tarzı kullan: önce problemi doğru anladığını göster, sonra sade ve güvenilir çözüm ver; kodu temiz, küçük fonksiyonlara ayrılmış, okunabilir ve test edilebilir yaz; açıklamayı kısa başlıklar, net gerekçe, edge case ve test adımlarıyla yap; gereksiz uzun konuşma ve özgüvenli tahminden kaçın.');
     }
 
     if (skills.includes('data-analysis')) {
