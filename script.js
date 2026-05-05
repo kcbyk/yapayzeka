@@ -214,6 +214,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    const getActiveSkills = () => Array.from(document.querySelectorAll('.skill-opt.active'))
+        .map(opt => opt.getAttribute('data-skill'))
+        .filter(Boolean);
+
     // 5. MESAJLAŞMA MANTIĞI
     if (chatForm) chatForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -234,6 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await wait(600);
             
             let aiResponseText = "";
+            const activeSkills = getActiveSkills();
             
             // API ÇAĞRISI (Failover Destekli)
             const callAPI = async (text) => {
@@ -244,7 +249,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         const response = await fetch(CONFIG.apiEndpoint, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ message: text })
+                            body: JSON.stringify({
+                                message: text,
+                                skills: activeSkills
+                            })
                         });
 
                         const data = await response.json().catch(() => ({}));
@@ -271,36 +279,49 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw lastError || new Error('AI servisi yanıt vermedi');
             };
 
-            // Yazılım Yeteneği Aktifse Kod Kontrolü Yap
-            const isCodingActive = document.querySelector('.skill-opt[data-skill="coding"]')?.classList.contains('active');
-            
-            if (isCodingActive) {
-                addThinkingStep("Yazılım geliştirme yeteneği aktif. Kod analizi yapılıyor...");
-                aiResponseText = await callAPI(`Aşağıdaki isteği yerine getir ve yazdığın kodda hata varsa düzeltip en stabil halini ver: ${userText}`);
-            } else {
-                aiResponseText = await callAPI(userText);
+            if (activeSkills.includes('web-search')) {
+                addThinkingStep("Web'de derin arama hazırlanıyor...");
             }
+            if (activeSkills.includes('coding')) {
+                addThinkingStep("Yazılım geliştirme modu aktif...");
+            }
+            if (activeSkills.includes('data-analysis')) {
+                addThinkingStep("Veri analizi modu aktif...");
+            }
+
+            aiResponseText = await callAPI(userText);
 
             hideThinking();
             addMessageWithCodeSupport(aiResponseText);
         } catch (error) {
             hideThinking();
             console.error("API Hatası:", error);
-            addMessageCard(createFallbackAnswer(userText), 'ai');
+            addMessageCard(createFallbackAnswer(userText, activeSkills), 'ai');
         }
     }
 
-    function createFallbackAnswer(userText) {
+    function createFallbackAnswer(userText, activeSkills = []) {
         const cleanText = userText.trim();
+        const skillNames = {
+            'web-search': "Web'de Derin Arama",
+            coding: 'Yazılım Geliştirme',
+            'data-analysis': 'Veri Analizi'
+        };
+        const activeSkillText = activeSkills
+            .map(skill => skillNames[skill])
+            .filter(Boolean)
+            .join(', ');
+        const skillSuffix = activeSkillText ? `\n\nAktif yetenekler: ${activeSkillText}.` : '';
+
         if (/^(merhaba|selam|sa|slm|hello|hi)\b/i.test(cleanText)) {
-            return "Merhaba! Buradayım. Ne yapmak istediğini yaz, birlikte çözelim.";
+            return `Merhaba! Buradayım. Ne yapmak istediğini yaz, birlikte çözelim.${skillSuffix}`;
         }
 
         if (/kod|hata|bug|site|api|yazılım|script|html|css|javascript/i.test(cleanText)) {
-            return `İsteğini aldım: "${cleanText}"\n\nŞu an dış AI servisi yoğun olsa bile sana yardımcı olmaya devam edebilirim. Kod veya hata için dosya adını, ekrandaki mesajı ve ne olmasını istediğini yaz; adım adım çözüm çıkarayım.`;
+            return `İsteğini aldım: "${cleanText}"${skillSuffix}\n\nŞu an dış AI servisi yoğun olsa bile sana yardımcı olmaya devam edebilirim. Kod veya hata için dosya adını, ekrandaki mesajı ve ne olmasını istediğini yaz; adım adım çözüm çıkarayım.`;
         }
 
-        return `İsteğini aldım: "${cleanText}"\n\nŞu an bağlantı yoğun olduğu için kısa modda yanıtlıyorum. Konuyu biraz daha detaylandırırsan sana net bir cevap hazırlayayım.`;
+        return `İsteğini aldım: "${cleanText}"${skillSuffix}\n\nŞu an bağlantı yoğun olduğu için kısa modda yanıtlıyorum. Konuyu biraz daha detaylandırırsan sana net bir cevap hazırlayayım.`;
     }
 
     function addMessageWithCodeSupport(text) {
