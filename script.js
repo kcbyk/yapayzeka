@@ -37,25 +37,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- YAPILANDIRMA VE ÇOKLU API YÖNETİMİ ---
     const API_MANAGER = {
-        keys: [
-            "AIzaSyDhYIlYhbV1mL2YgifnxHpnfJQZI_waNzE",
-            "AIzaSyAOwn9NDiTvtKa7pUHWVSju-hQjz8wC9Sg",
-            "AIzaSyDrjADQdZBSqcNIYnMwNWttrHj9s2IjUnE",
-            "AIzaSyBGzyYqVelr8XGNEHKvS-xYQFSmGvAUppQ",
-            "AIzaSyByqLl2Nkh3qRX9Zewq2qeMDV8IwOv6jfo",
-            "AIzaSyBGjow28M87Tcq67xnZreWriiMjwjPhg7g",
-            "AIzaSyAMoE1ce8DBQWNd7GsnamsZx6sE_T0KOi8"
-        ],
+        keyCount: 7,
         currentIndex: 0,
         quotaPerKey: 100, // Örnek kota değeri
         usedQuota: 0,
 
         getCurrentKey() {
-            return this.keys[this.currentIndex];
+            return this.currentIndex;
         },
 
         switchToNextKey() {
-            if (this.currentIndex < this.keys.length - 1) {
+            if (this.currentIndex < this.keyCount - 1) {
                 this.currentIndex++;
                 this.usedQuota = 0;
                 updateQuotaUI();
@@ -72,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const CONFIG = {
         useRealAPI: true, // Artık gerçek API'leri kullanabiliriz
-        apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
+        apiEndpoint: '/api/chat'
     };
 
     function updateQuotaUI() {
@@ -244,55 +236,39 @@ document.addEventListener('DOMContentLoaded', () => {
             let aiResponseText = "";
             
             // API ÇAĞRISI (Failover Destekli)
-            const callAPI = async (text, retryCount = 0) => {
-                const url = `${CONFIG.apiEndpoint}?key=${API_MANAGER.getCurrentKey()}`;
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: text }] }]
-                    })
-                });
+            const callAPI = async (text) => {
+                let lastError = null;
 
-                if (!response.ok) {
-                    let errorData = {};
+                for (let retryCount = 0; retryCount < 3; retryCount++) {
                     try {
-                        errorData = await response.json();
-                    } catch (_) {
-                        errorData = {};
-                    }
+                        const response = await fetch(CONFIG.apiEndpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message: text })
+                        });
 
-                    const errorStatus = errorData?.error?.status || '';
-                    const errorMessage = errorData?.error?.message || '';
-                    const shouldRetrySameKey = response.status >= 500 && retryCount < 2;
-                    const shouldTryNextKey =
-                        response.status === 429 ||
-                        response.status === 403 ||
-                        errorStatus === 'RESOURCE_EXHAUSTED' ||
-                        /quota|rate limit|api key|permission/i.test(errorMessage);
+                        const data = await response.json().catch(() => ({}));
+                        const textPart = data?.text || data?.message || data?.reply;
 
-                    if (shouldRetrySameKey) {
-                        addThinkingStep("Sunucu yoğun, tekrar deneniyor...");
-                        await wait(1000 * (retryCount + 1));
-                        return await callAPI(text, retryCount + 1);
-                    }
-
-                    if (shouldTryNextKey) { // Kota veya anahtar sorunu
-                        addThinkingStep("Kota bitti, sonraki anahtara geçiliyor...");
-                        if (API_MANAGER.switchToNextKey()) {
-                            return await callAPI(text); // Yeni anahtarla tekrar dene
+                        if (textPart) {
+                            if (typeof data.keyIndex === 'number') {
+                                API_MANAGER.currentIndex = data.keyIndex;
+                                updateQuotaUI();
+                            }
+                            API_MANAGER.trackUsage();
+                            return textPart;
                         }
+
+                        lastError = new Error(data?.error || `API ${response.status} döndü`);
+                    } catch (networkError) {
+                        lastError = networkError;
                     }
-                    throw new Error(errorMessage || 'API Hatası');
+
+                    addThinkingStep(retryCount < 2 ? "Bağlantı tekrar deneniyor..." : "Yedek yanıt hazırlanıyor...");
+                    await wait(1000 * (retryCount + 1));
                 }
 
-                const data = await response.json();
-                const textPart = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!textPart) {
-                    throw new Error('API yanıtı boş geldi');
-                }
-                API_MANAGER.trackUsage();
-                return textPart;
+                throw lastError || new Error('AI servisi yanıt vermedi');
             };
 
             // Yazılım Yeteneği Aktifse Kod Kontrolü Yap
@@ -309,8 +285,22 @@ document.addEventListener('DOMContentLoaded', () => {
             addMessageWithCodeSupport(aiResponseText);
         } catch (error) {
             hideThinking();
-            addMessageCard("Hata: Sunucuya bağlanılamadı veya kotalar tükendi.", 'ai');
+            console.error("API Hatası:", error);
+            addMessageCard(createFallbackAnswer(userText), 'ai');
         }
+    }
+
+    function createFallbackAnswer(userText) {
+        const cleanText = userText.trim();
+        if (/^(merhaba|selam|sa|slm|hello|hi)\b/i.test(cleanText)) {
+            return "Merhaba! Buradayım. Ne yapmak istediğini yaz, birlikte çözelim.";
+        }
+
+        if (/kod|hata|bug|site|api|yazılım|script|html|css|javascript/i.test(cleanText)) {
+            return `İsteğini aldım: "${cleanText}"\n\nŞu an dış AI servisi yoğun olsa bile sana yardımcı olmaya devam edebilirim. Kod veya hata için dosya adını, ekrandaki mesajı ve ne olmasını istediğini yaz; adım adım çözüm çıkarayım.`;
+        }
+
+        return `İsteğini aldım: "${cleanText}"\n\nŞu an bağlantı yoğun olduğu için kısa modda yanıtlıyorum. Konuyu biraz daha detaylandırırsan sana net bir cevap hazırlayayım.`;
     }
 
     function addMessageWithCodeSupport(text) {
