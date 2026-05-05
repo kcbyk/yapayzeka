@@ -1191,6 +1191,19 @@ function formatResearchSources(sources = []) {
     ].join('\n');
 }
 
+function formatResponseSources(sources = []) {
+    return sources
+        .slice(0, MAX_RESEARCH_SOURCES)
+        .map((source) => ({
+            title: sanitizePlainTextSegment(source.title || getHostname(source.url) || 'Kaynak'),
+            url: normalizeSourceUrl(source.url),
+            site: getHostname(source.url),
+            score: source.score,
+            trust: sourceScoreLabel(source.score)
+        }))
+        .filter((source) => /^https?:\/\//i.test(source.url));
+}
+
 function createNoSourceResearchAnswer() {
     return 'Araştırma Sonucu\n\n- Web araması denendi ama bu istek için güvenilir kaynak alınamadı.\n- Bu yüzden kesin bilgi gibi konuşmuyorum.\n- Konuyu biraz daha net yazarsan yeniden arayabilirim.';
 }
@@ -1453,6 +1466,7 @@ module.exports = async function handler(req, res) {
             text: (skills.includes('web-search') || lessons.length > 0 || shouldUseDefaultResearch(message))
                 ? createResearchAnswer(message, webSources)
                 : createFallbackAnswer(message, skills, lessons),
+            sources: formatResponseSources(webSources),
             offline: true
         });
     }
@@ -1478,6 +1492,7 @@ module.exports = async function handler(req, res) {
                         }),
                         provider: 'anthropic-compatible',
                         model: anthropicConfig.model,
+                        sources: formatResponseSources(webSources),
                         skills,
                         lessons
                     });
@@ -1524,6 +1539,7 @@ module.exports = async function handler(req, res) {
                             }),
                             keyIndex,
                             model: modelName,
+                            sources: formatResponseSources(webSources),
                             skills,
                             lessons
                         });
@@ -1566,6 +1582,7 @@ module.exports = async function handler(req, res) {
         text: (skills.includes('web-search') || lessons.length > 0 || shouldUseDefaultResearch(message))
             ? createResearchAnswer(message, webSources)
             : createFallbackAnswer(message, skills, lessons),
+        sources: formatResponseSources(webSources),
         offline: true
     });
 };

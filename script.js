@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const messageInput = getEl('messageInput');
     const chatHistory = getEl('chatHistory');
     const thinkingIndicator = getEl('thinkingIndicator');
+    const thinkingText = getEl('thinkingText');
     const thinkingSteps = getEl('thinkingSteps');
     const chatList = getEl('chatList');
     const pinnedChatList = getEl('pinnedChatList');
@@ -260,16 +261,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     async function handleAIResponse(userText) {
-        showThinking();
+        showThinking(userText);
         if (thinkingSteps) thinkingSteps.innerHTML = '';
         const activeSkills = getActiveSkills();
         const activeLessons = getActiveLessons();
+        const activeModeCount = activeSkills.length + activeLessons.length;
 
         try {
             addThinkingStep("İşlem başlatılıyor...");
             await wait(600);
             
-            let aiResponseText = "";
+            addThinkingStep("Mesaj okundu ve istek hazırlanıyor.", userText.length > 90 ? `${userText.slice(0, 90)}...` : userText);
+            addThinkingStep(
+                activeModeCount ? "Aktif yetenekler ve ders modu kontrol edildi." : "Standart uzman asistan modu seçildi.",
+                activeModeCount ? `${activeModeCount} aktif seçim var.` : "Ek mod seçilmedi."
+            );
+
+            let aiResponsePayload = { text: "", sources: [] };
             
             // API ÇAĞRISI (Failover Destekli)
             const callAPI = async (text) => {
@@ -277,6 +285,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 for (let retryCount = 0; retryCount < 3; retryCount++) {
                     try {
+                        addThinkingStep(
+                            retryCount === 0 ? "Solenz beyniyle bağlantı kuruluyor." : "Bağlantı yeniden deneniyor.",
+                            `${CONFIG.apiEndpoint} isteği gönderiliyor.`
+                        );
                         const response = await fetch(CONFIG.apiEndpoint, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -289,6 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         const data = await response.json().catch(() => ({}));
                         const textPart = data?.text || data?.message || data?.reply;
+                        const sources = Array.isArray(data?.sources) ? data.sources : [];
 
                         if (textPart) {
                             if (typeof data.keyIndex === 'number') {
@@ -296,7 +309,14 @@ document.addEventListener('DOMContentLoaded', () => {
                                 updateQuotaUI();
                             }
                             API_MANAGER.trackUsage();
-                            return textPart;
+                            addThinkingStep(
+                                "Yanıt alındı ve kaynaklar ayrılıyor.",
+                                sources.length ? `${sources.length} kaynak ikon olarak hazırlanıyor.` : "Bu yanıtta kaynak listesi yok."
+                            );
+                            if (data?.provider || data?.model) {
+                                addThinkingStep("Model bilgisi doğrulandı.", [data.provider, data.model].filter(Boolean).join(' / '));
+                            }
+                            return { text: textPart, sources };
                         }
 
                         lastError = new Error(data?.error || `API ${response.status} döndü`);
@@ -304,7 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         lastError = networkError;
                     }
 
-                    addThinkingStep(retryCount < 2 ? "Bağlantı tekrar deneniyor..." : "Yedek yanıt hazırlanıyor...");
+                    addThinkingStep(retryCount < 2 ? "Bağlantı tekrar deneniyor." : "Yedek yanıt hazırlanıyor.", lastError?.message || "");
                     await wait(1000 * (retryCount + 1));
                 }
 
@@ -324,14 +344,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 addThinkingStep("Ders kaynakları ve seviye ayarı hazırlanıyor...");
             }
 
-            aiResponseText = await callAPI(userText);
+            aiResponsePayload = await callAPI(userText);
+            addThinkingStep("Cevap arayüz için düzenleniyor.", "Başlıklar, boşluklar, kod blokları ve kaynak ikonları hazırlanıyor.");
+            await wait(350);
 
             hideThinking();
-            addMessageWithCodeSupport(aiResponseText);
+            addMessageWithCodeSupport(aiResponsePayload.text, aiResponsePayload.sources);
         } catch (error) {
             hideThinking();
             console.error("API Hatası:", error);
-            addMessageCard(createFallbackAnswer(userText, activeSkills, activeLessons), 'ai');
+            addMessageWithCodeSupport(createFallbackAnswer(userText, activeSkills, activeLessons), []);
         }
     }
 
@@ -379,24 +401,219 @@ document.addEventListener('DOMContentLoaded', () => {
         return `İsteğini aldım: "${cleanText}"${skillSuffix}\n\nŞu an bağlantı yoğun olduğu için kısa modda yanıtlıyorum. Konuyu biraz daha detaylandırırsan sana net bir cevap hazırlayayım.`;
     }
 
-    function addMessageWithCodeSupport(text) {
+    function cleanAssistantText(rawText = '') {
+        return String(rawText || '')
+            .replace(/\r\n/g, '\n')
+            .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+            .replace(/\*\*/g, '')
+            .replace(/__([^_]+)__/g, '$1')
+            .replace(/[•●]/g, '-')
+            .replace(/[ \t]+\n/g, '\n')
+            .trim();
+    }
+
+    function getSourceHost(url = '') {
+        try {
+            return new URL(url).hostname.replace(/^www\./, '');
+        } catch (error) {
+            return String(url).replace(/^https?:\/\//, '').split('/')[0];
+        }
+    }
+
+    function normalizeSource(source) {
+        if (!source) return null;
+        const url = source.url || source.href || source.link || '';
+        if (!/^https?:\/\//i.test(url)) return null;
+        const site = source.site || source.domain || getSourceHost(url);
+        return {
+            url,
+            site,
+            title: source.title || source.name || site || 'Kaynak',
+            trust: source.trust || source.confidence || source.scoreLabel || source.score || ''
+        };
+    }
+
+    function splitAnswerAndSources(rawText = '') {
+        const text = cleanAssistantText(rawText);
+        const match = text.match(/\n\s*kaynaklar\s*:?\s*(?:\n|$)/i);
+        if (!match) return { body: text, sources: [] };
+
+        const body = text.slice(0, match.index).trim();
+        const sourceText = text.slice(match.index + match[0].length).trim();
+        const sources = [];
+        let current = {};
+
+        sourceText.split('\n').forEach((line) => {
+            const cleaned = line.trim();
+            if (!cleaned) return;
+
+            const titleMatch = cleaned.match(/başlık\s*:\s*(.+)$/i);
+            const urlMatch = cleaned.match(/(?:adres|url|kaynak)\s*:\s*(https?:\/\/\S+)/i);
+            const trustMatch = cleaned.match(/güven\s*:\s*(.+)$/i);
+            const looseUrl = cleaned.match(/https?:\/\/\S+/i);
+
+            if (/^kaynak\s+\d+/i.test(cleaned)) {
+                current = {};
+                return;
+            }
+
+            if (titleMatch) {
+                current.title = titleMatch[1].trim();
+                return;
+            }
+
+            if (trustMatch) {
+                current.trust = trustMatch[1].trim();
+                return;
+            }
+
+            if (urlMatch || looseUrl) {
+                const url = (urlMatch ? urlMatch[1] : looseUrl[0]).replace(/[.,;]+$/, '');
+                sources.push({
+                    ...current,
+                    url,
+                    site: getSourceHost(url)
+                });
+                current = {};
+            }
+        });
+
+        return { body, sources };
+    }
+
+    function mergeSources(...sourceGroups) {
+        const seen = new Set();
+        const merged = [];
+
+        sourceGroups.flat().map(normalizeSource).filter(Boolean).forEach((source) => {
+            const key = source.url.replace(/\/$/, '');
+            if (seen.has(key)) return;
+            seen.add(key);
+            merged.push(source);
+        });
+
+        return merged;
+    }
+
+    function isHeadingLine(line = '') {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.length > 90) return false;
+        return /[:：]$/.test(trimmed) || /^[A-ZÇĞİÖŞÜ0-9][^.!?]{2,70}$/.test(trimmed);
+    }
+
+    function appendFormattedText(container, rawText = '') {
+        const blocks = cleanAssistantText(rawText).split(/\n{2,}/).map(block => block.trim()).filter(Boolean);
+
+        blocks.forEach((block, index) => {
+            const lines = block.split('\n').map(line => line.trim()).filter(Boolean);
+            if (!lines.length) return;
+
+            if (lines.every(line => /^[-*]\s+/.test(line) || /^\d+[.)]\s+/.test(line))) {
+                const list = document.createElement('ul');
+                list.className = 'ai-premium-list';
+                lines.forEach((line) => {
+                    const item = document.createElement('li');
+                    item.textContent = line.replace(/^[-*]\s+/, '').replace(/^\d+[.)]\s+/, '');
+                    list.appendChild(item);
+                });
+                list.style.setProperty('--stagger', `${Math.min(index * 70, 700)}ms`);
+                container.appendChild(list);
+                return;
+            }
+
+            if (lines.length === 1 && isHeadingLine(lines[0])) {
+                const heading = document.createElement('div');
+                heading.className = 'ai-premium-heading';
+                heading.textContent = lines[0].replace(/[:：]$/, '');
+                heading.style.setProperty('--stagger', `${Math.min(index * 70, 700)}ms`);
+                container.appendChild(heading);
+                return;
+            }
+
+            const paragraph = document.createElement('p');
+            paragraph.className = 'ai-premium-paragraph';
+            paragraph.innerHTML = lines.map(escapeHTML).join('<br>');
+            paragraph.style.setProperty('--stagger', `${Math.min(index * 70, 700)}ms`);
+            container.appendChild(paragraph);
+        });
+    }
+
+    function appendSourceIcons(container, sources = []) {
+        const normalizedSources = mergeSources(sources);
+        if (!normalizedSources.length) return;
+
+        const rail = document.createElement('div');
+        rail.className = 'source-icon-rail';
+
+        const label = document.createElement('div');
+        label.className = 'source-rail-title';
+        label.innerHTML = '<span>Kaynaklar</span><small>İkona tıklayınca site açılır</small>';
+        rail.appendChild(label);
+
+        const list = document.createElement('div');
+        list.className = 'source-icon-list';
+
+        normalizedSources.forEach((source, index) => {
+            const link = document.createElement('a');
+            link.className = 'source-icon-link';
+            link.href = source.url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.title = `${source.title}${source.trust ? ` - ${source.trust}` : ''}`;
+            link.style.setProperty('--source-index', index);
+
+            const glow = document.createElement('span');
+            glow.className = 'source-icon-glow';
+
+            const img = document.createElement('img');
+            img.src = `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(source.url)}&sz=64`;
+            img.alt = source.site;
+            img.loading = 'lazy';
+
+            const fallback = document.createElement('span');
+            fallback.className = 'source-icon-fallback';
+            fallback.textContent = (source.site || '?').charAt(0).toUpperCase();
+            fallback.style.display = 'none';
+
+            img.onerror = () => {
+                img.style.display = 'none';
+                fallback.style.display = 'inline-flex';
+            };
+
+            const site = document.createElement('span');
+            site.className = 'source-site';
+            site.textContent = source.site;
+
+            link.appendChild(glow);
+            link.appendChild(img);
+            link.appendChild(fallback);
+            link.appendChild(site);
+            list.appendChild(link);
+        });
+
+        rail.appendChild(list);
+        container.appendChild(rail);
+    }
+
+    function addMessageWithCodeSupport(text, sources = []) {
         if (!chatHistory) return;
 
         const card = document.createElement('div');
         card.className = 'message-card ai-card';
         const content = document.createElement('div');
-        content.className = 'card-content';
+        content.className = 'card-content ai-premium-content';
+        const { body, sources: inlineSources } = splitAnswerAndSources(text);
+        const mergedSources = mergeSources(sources, inlineSources);
 
         // Kod bloklarını tespit et (```kod```)
         const codeRegex = /```(\w+)?\n([\s\S]*?)```/g;
         let lastIndex = 0;
         let match;
 
-        while ((match = codeRegex.exec(text)) !== null) {
+        while ((match = codeRegex.exec(body)) !== null) {
             // Kod öncesindeki metni ekle
             if (match.index > lastIndex) {
-                const textNode = document.createTextNode(text.substring(lastIndex, match.index));
-                content.appendChild(textNode);
+                appendFormattedText(content, body.substring(lastIndex, match.index));
             }
 
             const lang = match[1] || 'code';
@@ -442,10 +659,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Kalan metni ekle
-        if (lastIndex < text.length) {
-            const textNode = document.createTextNode(text.substring(lastIndex));
-            content.appendChild(textNode);
+        if (lastIndex < body.length) {
+            appendFormattedText(content, body.substring(lastIndex));
         }
+
+        appendSourceIcons(content, mergedSources);
 
         card.appendChild(content);
         chatHistory.appendChild(card);
@@ -458,11 +676,22 @@ document.addEventListener('DOMContentLoaded', () => {
         return p.innerHTML;
     }
 
-    function addThinkingStep(stepText) {
+    function addThinkingStep(stepText, detailText = '') {
         if (thinkingSteps) {
             const step = document.createElement('div');
             step.className = 'step-item';
-            step.textContent = `> ${stepText}`;
+            const main = document.createElement('span');
+            main.className = 'step-main';
+            main.textContent = stepText;
+            step.appendChild(main);
+
+            if (detailText) {
+                const detail = document.createElement('small');
+                detail.className = 'step-detail';
+                detail.textContent = detailText;
+                step.appendChild(detail);
+            }
+
             thinkingSteps.appendChild(step);
             scrollToBottom();
         }
@@ -533,8 +762,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 7. YARDIMCI FONKSİYONLAR
-    function showThinking() { if (thinkingIndicator) thinkingIndicator.classList.remove('hidden'); }
-    function hideThinking() { if (thinkingIndicator) thinkingIndicator.classList.add('hidden'); }
+    function showThinking(userText = '') {
+        if (thinkingText) {
+            thinkingText.textContent = 'Yapay zeka düşünüyor...';
+            thinkingText.setAttribute('title', userText);
+        }
+        if (thinkingIndicator) thinkingIndicator.classList.remove('hidden');
+    }
+
+    function hideThinking() {
+        if (thinkingIndicator) thinkingIndicator.classList.add('hidden');
+        if (thinkingSteps) thinkingSteps.innerHTML = '';
+    }
     function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
     function scrollToBottom() {
         if (chatHistory) chatHistory.parentElement.scrollTop = chatHistory.parentElement.scrollHeight;

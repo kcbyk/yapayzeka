@@ -546,6 +546,173 @@ pre {
     white-space: pre-wrap;
 }
 
+.ai-card .ai-premium-content {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    white-space: normal;
+}
+
+.ai-premium-heading,
+.ai-premium-paragraph,
+.ai-premium-list,
+.source-icon-rail {
+    animation: premiumTextIn 0.52s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation-delay: var(--stagger, 0ms);
+}
+
+.ai-premium-heading {
+    margin-top: 4px;
+    padding-left: 14px;
+    border-left: 2px solid rgba(255, 255, 255, 0.82);
+    color: #fff;
+    font-size: 1.05rem;
+    font-weight: 750;
+    line-height: 1.35;
+    letter-spacing: 0;
+}
+
+.ai-premium-paragraph {
+    margin: 0;
+    color: rgba(235, 235, 234, 0.9);
+    font-size: 0.98rem;
+    line-height: 1.82;
+    letter-spacing: 0;
+}
+
+.ai-premium-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding-left: 22px;
+}
+
+.ai-premium-list li {
+    color: rgba(235, 235, 234, 0.9);
+    line-height: 1.72;
+    padding-left: 4px;
+}
+
+.source-icon-rail {
+    margin-top: 8px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.source-rail-title {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.source-rail-title span {
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 750;
+}
+
+.source-rail-title small {
+    color: rgba(205, 205, 204, 0.52);
+    font-size: 0.72rem;
+}
+
+.source-icon-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.source-icon-link {
+    min-height: 42px;
+    max-width: 168px;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.035));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 28px rgba(0,0,0,0.22);
+    overflow: hidden;
+    animation: sourceIconIn 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation-delay: calc(var(--source-index, 0) * 70ms + 120ms);
+}
+
+.source-icon-link:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.28);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 16px 34px rgba(0,0,0,0.34);
+}
+
+.source-icon-glow {
+    position: absolute;
+    inset: -1px;
+    opacity: 0;
+    background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.34) 45%, transparent 72%);
+    transform: translateX(-110%);
+}
+
+.source-icon-link:hover .source-icon-glow {
+    opacity: 1;
+    animation: sourceSheen 0.85s ease;
+}
+
+.source-icon-link img {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    border-radius: 7px;
+    background: #fff;
+    position: relative;
+    z-index: 1;
+}
+
+.source-icon-fallback {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 7px;
+    background: rgba(255,255,255,0.14);
+    color: #fff;
+    font-weight: 800;
+    position: relative;
+    z-index: 1;
+}
+
+.source-site {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(245, 245, 245, 0.86);
+    font-size: 0.78rem;
+    font-weight: 700;
+    position: relative;
+    z-index: 1;
+}
+
+@keyframes premiumTextIn {
+    from { opacity: 0; transform: translateY(14px); filter: blur(4px); }
+    to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+@keyframes sourceIconIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes sourceSheen {
+    from { transform: translateX(-110%); }
+    to { transform: translateX(110%); }
+}
+
 /* Input Area */
 .input-area {
     padding: 1rem;
@@ -682,19 +849,26 @@ textarea {
 .thinking-container {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
     margin-top: 10px;
+    padding: 14px 16px;
     align-self: flex-start;
     max-width: 85%;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 14px;
+    background: rgba(24, 24, 24, 0.58);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+    animation: thinkingPanelIn 0.28s ease-out both;
 }
 
 .thinking-status {
     font-size: 0.85rem;
     color: var(--text-color);
-    font-style: italic;
     display: flex;
     align-items: center;
     gap: 8px;
+    font-weight: 700;
 }
 
 .thinking-dot {
@@ -708,15 +882,32 @@ textarea {
 .thinking-steps {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding-left: 14px;
-    border-left: 1px dashed rgba(255, 255, 255, 0.2);
+    gap: 8px;
+    padding-left: 0;
 }
 
 .step-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 11px;
+    border-left: 2px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.045);
+    color: rgba(235, 235, 234, 0.72);
+    animation: transparentThoughtIn 0.45s ease-out forwards;
+}
+
+.step-main {
     font-size: 0.8rem;
-    color: rgba(205, 205, 204, 0.6);
-    animation: fadeIn 0.5s ease-out forwards;
+    font-weight: 650;
+    letter-spacing: 0;
+}
+
+.step-detail {
+    color: rgba(205, 205, 204, 0.48);
+    font-size: 0.72rem;
+    line-height: 1.42;
 }
 
 @keyframes pulse {
@@ -728,6 +919,16 @@ textarea {
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(5px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes thinkingPanelIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes transparentThoughtIn {
+    from { opacity: 0; transform: translateY(8px); filter: blur(3px); }
+    to { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
 
 .hidden {
@@ -814,5 +1015,17 @@ textarea {
 @media (max-width: 480px) {
     .message-card {
         max-width: 95%;
+    }
+
+    .thinking-container {
+        max-width: 95%;
+    }
+
+    .source-icon-link {
+        max-width: calc(50vw - 28px);
+    }
+
+    .source-site {
+        font-size: 0.72rem;
     }
 }
