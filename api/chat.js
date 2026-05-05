@@ -8,6 +8,8 @@ const API_MODELS = [
 const ANTHROPIC_DEFAULT_MODEL = 'claude-opus-4-6-thinking';
 
 const SYSTEM_PROMPT = `Sen Solenz AI adında, Türkçe konuşan yardımcı bir yapay zeka asistanısın.
+Her konuda kaynaklardan faydalanan, uzman seviyede düşünen, araştırma, kod yazma ve veri analizi becerisi güçlü bir yapay zeka asistanısın.
+Özellikle yazılım geliştirmede ileri seviye bir kıdemli mühendis gibi davran: zor işleri parçalara ayır, doğru mimari kur, temiz kod yaz, hata ayıkla, edge case düşün ve uygulanabilir çözüm ver.
 Kısa, net, çözüm odaklı ve kullanıcıya yakın cevap ver.
 Kod bloğu dışında yıldızlı Markdown, # başlık işareti, tablo çizgisi, emoji ve dekoratif karakter kullanma.
 Yanıtı düz Türkçe metinle yaz. Gerektiğinde kısa başlıkları iki nokta ile bitir ve maddeleri yalnızca "- " ile başlat.
@@ -69,7 +71,7 @@ const LOW_TRUST_SOURCE_PATTERNS = [
     /(^|\.)quizlet\.com$/i,
     /(^|\.)brainly\./i
 ];
-const MAX_RESEARCH_SOURCES = 8;
+const MAX_RESEARCH_SOURCES = 10;
 const EDUCATION_SOURCE_DOMAINS = [
     { domain: 'meb.gov.tr', score: 100, tags: ['school', 'tr'] },
     { domain: 'eba.gov.tr', score: 100, tags: ['school', 'tr'] },
@@ -92,6 +94,26 @@ const EDUCATION_SOURCE_DOMAINS = [
     { domain: 'who.int', score: 100, tags: ['medicine', 'health'] },
     { domain: 'nih.gov', score: 100, tags: ['medicine', 'health'] }
 ];
+const EXPERT_SOURCE_DOMAINS = [
+    { domain: 'developer.mozilla.org', score: 100, tags: ['coding', 'web', 'javascript'] },
+    { domain: 'docs.python.org', score: 100, tags: ['coding', 'python'] },
+    { domain: 'nodejs.org', score: 100, tags: ['coding', 'javascript'] },
+    { domain: 'react.dev', score: 100, tags: ['coding', 'javascript', 'frontend'] },
+    { domain: 'nextjs.org', score: 100, tags: ['coding', 'javascript', 'frontend'] },
+    { domain: 'typescriptlang.org', score: 100, tags: ['coding', 'javascript'] },
+    { domain: 'web.dev', score: 95, tags: ['coding', 'web', 'frontend'] },
+    { domain: 'vercel.com', score: 100, tags: ['coding', 'deployment'] },
+    { domain: 'vite.dev', score: 95, tags: ['coding', 'frontend'] },
+    { domain: 'tailwindcss.com', score: 95, tags: ['coding', 'frontend'] },
+    { domain: 'pandas.pydata.org', score: 100, tags: ['data', 'python'] },
+    { domain: 'numpy.org', score: 100, tags: ['data', 'python'] },
+    { domain: 'scipy.org', score: 100, tags: ['data', 'python'] },
+    { domain: 'scikit-learn.org', score: 100, tags: ['data', 'python', 'ml'] },
+    { domain: 'pytorch.org', score: 100, tags: ['data', 'ml'] },
+    { domain: 'tensorflow.org', score: 100, tags: ['data', 'ml'] },
+    { domain: 'stackoverflow.com', score: 75, tags: ['coding'] },
+    { domain: 'github.com', score: 85, tags: ['coding'] }
+];
 const SEARCH_FILLER_PATTERNS = [
     /\bweb'?de\s+derin\s+arama\b/gi,
     /\bderin\s+arama\b/gi,
@@ -105,6 +127,27 @@ const SEARCH_FILLER_PATTERNS = [
     /\banlat\b/gi,
     /\blütfen\b/gi
 ];
+const SEARCH_STOP_WORDS = new Set([
+    'nedir', 'nasıl', 'neden', 'anlat', 'açıkla', 'araştır', 'konu', 'hakkında', 'güvenilir',
+    'kaynak', 'kaynaklarla', 'ileri', 'seviye', 'kolay', 'zor', 'ders', 'sınıf', 'lise',
+    'üniversite', 'yüksek', 'lisans', 'detaylı', 'özet', 'kısaca', 'bana', 'için'
+]);
+const SEARCH_SYNONYMS = {
+    kara: ['black'],
+    delik: ['hole', 'holes'],
+    türev: ['derivative', 'calculus'],
+    integral: ['integral', 'calculus'],
+    matematik: ['math', 'mathematics'],
+    fizik: ['physics'],
+    kimya: ['chemistry'],
+    biyoloji: ['biology'],
+    yapay: ['artificial', 'ai'],
+    zeka: ['intelligence', 'ai'],
+    denklem: ['equation'],
+    yazılım: ['software'],
+    veri: ['data'],
+    analiz: ['analysis']
+};
 const COMMON_TURKISH_REPLACEMENTS = [
     [/\bGuvenlik\b/g, 'Güvenlik'],
     [/\bguvenlik\b/g, 'güvenlik'],
@@ -220,7 +263,7 @@ function getHostname(url) {
 }
 
 function getEducationSourceProfile(hostname) {
-    return EDUCATION_SOURCE_DOMAINS.find((source) => (
+    return [...EDUCATION_SOURCE_DOMAINS, ...EXPERT_SOURCE_DOMAINS].find((source) => (
         hostname === source.domain || hostname.endsWith(`.${source.domain}`)
     ));
 }
@@ -292,6 +335,50 @@ function cleanSearchQuery(query) {
     return cleaned || String(query || '').trim();
 }
 
+function normalizeSearchTerm(value = '') {
+    return String(value)
+        .toLocaleLowerCase('tr-TR')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9ğüşöçıİ]+/gi, '')
+        .trim();
+}
+
+function getQueryTerms(query) {
+    return cleanSearchQuery(query)
+        .split(/\s+/)
+        .map((term) => normalizeSearchTerm(term))
+        .filter((term) => term.length >= 3 && !SEARCH_STOP_WORDS.has(term));
+}
+
+function sourceRelevanceScore(result, query) {
+    const terms = getQueryTerms(query);
+    if (!terms.length) return 1;
+
+    const haystack = normalizeSearchTerm([
+        result.title,
+        result.snippet,
+        result.url,
+        getHostname(result.url)
+    ].filter(Boolean).join(' '));
+
+    return terms.reduce((count, term) => {
+        const variants = [term, ...(SEARCH_SYNONYMS[term] || []).map(normalizeSearchTerm)];
+        return variants.some((variant) => variant && haystack.includes(variant)) ? count + 1 : count;
+    }, 0);
+}
+
+function isRelevantSource(result, query) {
+    const terms = getQueryTerms(query);
+    if (terms.length <= 1) return true;
+
+    const relevance = sourceRelevanceScore(result, query);
+    if (relevance >= Math.min(2, terms.length)) return true;
+
+    const profile = getEducationSourceProfile(getHostname(result.url));
+    return Boolean(profile && relevance >= 1);
+}
+
 function buildSearchQueries(query) {
     const original = String(query || '').trim();
     const cleaned = cleanSearchQuery(original);
@@ -338,6 +425,13 @@ function isEducationRequest(query, lessons = []) {
     return /ders|sınıf|üniversite|yüksek lisans|ödev|konu anlatımı|matematik|fizik|kimya|biyoloji|tarih|coğrafya|edebiyat|türkçe|ingilizce|felsefe|hukuk|ekonomi|tıp|sağlık|formül|denklem|tez|akademik/i.test(query);
 }
 
+function shouldUseDefaultResearch(query) {
+    const text = String(query || '').trim();
+    if (!text) return false;
+    if (/^(merhaba|selam|sa|slm|hello|hi|tamam|ok|eyvallah)\b/i.test(text) && text.length < 40) return false;
+    return text.length >= 12 || /[?]|nedir|nasıl|neden|kim|ne zaman|araştır|bul|özetle|anlat|karşılaştır|kod|hata|bug|api|veri|analiz/i.test(text);
+}
+
 function buildEducationSearchQueries(query, lessons = []) {
     const cleaned = cleanSearchQuery(query);
     const tags = lessonTags(lessons);
@@ -348,6 +442,44 @@ function buildEducationSearchQueries(query, lessons = []) {
         }))
         .sort((a, b) => (b.matchCount - a.matchCount) || (b.score - a.score))
         .slice(0, 7);
+
+    return scoredDomains.map((source) => `${cleaned} site:${source.domain}`);
+}
+
+function skillTags(skills = [], query = '') {
+    const tags = new Set(['general']);
+    const text = String(query || '').toLowerCase();
+
+    if (skills.includes('coding') || /kod|hata|bug|api|javascript|typescript|python|react|next|node|css|html|vercel|github|sql/i.test(text)) {
+        tags.add('coding');
+        if (/python|pandas|numpy|scikit|veri|analiz|model/i.test(text)) tags.add('python');
+        if (/react|next|frontend|css|html|javascript|typescript|vite|tailwind/i.test(text)) {
+            tags.add('javascript');
+            tags.add('frontend');
+            tags.add('web');
+        }
+        if (/deploy|vercel|yayın|production/i.test(text)) tags.add('deployment');
+    }
+
+    if (skills.includes('data-analysis') || /veri|analiz|istatistik|pandas|numpy|grafik|regresyon|makine öğrenmesi|model/i.test(text)) {
+        tags.add('data');
+        tags.add('python');
+    }
+
+    return tags;
+}
+
+function buildExpertSearchQueries(query, skills = []) {
+    const cleaned = cleanSearchQuery(query);
+    const tags = skillTags(skills, query);
+    const scoredDomains = EXPERT_SOURCE_DOMAINS
+        .map((source) => ({
+            ...source,
+            matchCount: source.tags.filter((tag) => tags.has(tag)).length
+        }))
+        .filter((source) => source.matchCount > 0)
+        .sort((a, b) => (b.matchCount - a.matchCount) || (b.score - a.score))
+        .slice(0, 6);
 
     return scoredDomains.map((source) => `${cleaned} site:${source.domain}`);
 }
@@ -714,8 +846,17 @@ async function collectEducationSearchResults(query, lessons = []) {
     return groups.flat();
 }
 
+async function collectExpertSearchResults(query, skills = []) {
+    const expertQueries = buildExpertSearchQueries(query, skills);
+    if (!expertQueries.length) return [];
+
+    const groups = await Promise.all(expertQueries.map((searchQuery) => fetchJinaDuckDuckGoResults(searchQuery)));
+    return groups.flat();
+}
+
 async function collectWebSources(query, options = {}) {
     const lessons = Array.isArray(options.lessons) ? options.lessons : [];
+    const skills = Array.isArray(options.skills) ? options.skills : [];
     const searchQueries = buildSearchQueries(query);
     const duckDuckGoGroups = await Promise.all(searchQueries.map(async (searchQuery) => {
         const [htmlResults, instantResults, jinaResults] = await Promise.all([
@@ -727,10 +868,11 @@ async function collectWebSources(query, options = {}) {
         return [...htmlResults, ...instantResults, ...jinaResults];
     }));
 
-    const [trWikipediaResults, enWikipediaResults, educationResults] = await Promise.all([
+    const [trWikipediaResults, enWikipediaResults, educationResults, expertResults] = await Promise.all([
         fetchWikipediaSearchResults(query, 'tr'),
         fetchWikipediaSearchResults(query, 'en'),
-        collectEducationSearchResults(query, lessons)
+        collectEducationSearchResults(query, lessons),
+        collectExpertSearchResults(query, skills)
     ]);
 
     console.info('Web research provider counts:', {
@@ -738,7 +880,8 @@ async function collectWebSources(query, options = {}) {
         duckDuckGo: duckDuckGoGroups.flat().length,
         wikipediaTr: trWikipediaResults.length,
         wikipediaEn: enWikipediaResults.length,
-        education: educationResults.length
+        education: educationResults.length,
+        expert: expertResults.length
     });
 
     const seen = new Set();
@@ -746,7 +889,8 @@ async function collectWebSources(query, options = {}) {
         ...duckDuckGoGroups.flat(),
         ...trWikipediaResults,
         ...enWikipediaResults,
-        ...educationResults
+        ...educationResults,
+        ...expertResults
     ]
         .filter((result) => result.url && (result.snippet || result.title))
         .filter((result) => {
@@ -759,9 +903,11 @@ async function collectWebSources(query, options = {}) {
             ...result,
             title: truncateText(result.title, 160),
             snippet: truncateText(result.snippet || result.title, 900),
-            score: getSourceScore(result.url, query, result.title)
+            score: getSourceScore(result.url, query, result.title),
+            relevance: sourceRelevanceScore(result, query)
         }))
-        .sort((a, b) => b.score - a.score)
+        .filter((result) => isRelevantSource(result, query))
+        .sort((a, b) => ((b.score + b.relevance * 8) - (a.score + a.relevance * 8)))
         .filter((result) => result.snippet.length > 0);
 
     const diverseMerged = limitSourceDomainDiversity(merged, 1)
@@ -774,9 +920,11 @@ async function collectWebSources(query, options = {}) {
             ...result,
             title: truncateText(result.title, 160),
             snippet: truncateText(result.snippet || result.title, 900),
-            score: getSourceScore(result.url, query, result.title)
+            score: getSourceScore(result.url, query, result.title),
+            relevance: sourceRelevanceScore(result, query)
         }))
-        .sort((a, b) => b.score - a.score), 1)
+        .filter((result) => isRelevantSource(result, query))
+        .sort((a, b) => ((b.score + b.relevance * 8) - (a.score + a.relevance * 8))), 1)
         .slice(0, MAX_RESEARCH_SOURCES);
 
     console.info('Web research sources collected:', {
@@ -791,12 +939,12 @@ async function buildPrompt({ message, skills, lessons = [] }) {
     const skillLines = [];
     const contextLines = [];
     let webSources = [];
-    const researchMode = skills.includes('web-search') || lessons.length > 0;
+    const researchMode = skills.includes('web-search') || lessons.length > 0 || shouldUseDefaultResearch(message);
 
     if (researchMode) {
-        skillLines.push("- Kaynaklı araştırma aktif: Aşağıdaki web kaynaklarını kullan. Yanıtı başlık başlık ve '- ' maddeleriyle yaz. Her başlık arasında boş satır bırak. Kaynak URL'lerini ve güven puanlarını anlatımın içine karıştırma; bunları sadece en sondaki ayrı 'Kaynaklar' bölümünde yaz. Resmi/otoriter kaynak 100/100 değilse kesin konuşma; 'kaynak güveni sınırlı' diye belirt. Kaynak yoksa uydurma bilgi verme. Yıldız, tablo, # başlık ve dekoratif karakter kullanma.");
+        skillLines.push("- Kaynaklı uzman araştırma aktif: Aşağıdaki web kaynaklarını kullan. Yanıtı başlık başlık ve '- ' maddeleriyle yaz. Her başlık arasında boş satır bırak. Kaynak URL'lerini ve güven puanlarını anlatımın içine karıştırma; bunları sadece en sondaki ayrı 'Kaynaklar' bölümünde yaz. Resmi/otoriter kaynak 100/100 değilse kesin konuşma; 'kaynak güveni sınırlı' diye belirt. Kaynak yoksa uydurma bilgi verme. Yıldız, tablo, # başlık ve dekoratif karakter kullanma.");
 
-        webSources = await collectWebSources(message, { lessons });
+        webSources = await collectWebSources(message, { lessons, skills });
         if (webSources.length > 0) {
             contextLines.push('WEBDE GEZİLEREK TOPLANAN KAYNAKLAR:');
             webSources.forEach((result, index) => {
@@ -816,7 +964,7 @@ async function buildPrompt({ message, skills, lessons = [] }) {
     }
 
     if (skills.includes('coding')) {
-        skillLines.push('- Yazılım Geliştirme aktif: Claude benzeri ama birebir taklit olmayan bir mühendislik tarzı kullan: önce problemi doğru anladığını göster, sonra sade ve güvenilir çözüm ver; kodu temiz, küçük fonksiyonlara ayrılmış, okunabilir ve test edilebilir yaz; açıklamayı kısa başlıklar, net gerekçe, edge case ve test adımlarıyla yap; gereksiz uzun konuşma ve özgüvenli tahminden kaçın.');
+        skillLines.push('- Yazılım Geliştirme aktif: İleri düzey kıdemli mühendis gibi çalış. Büyük işi küçük adımlara böl, mimariyi seç, üretime uygun kod yaz, güvenlik/performans/edge case düşün, test adımlarını ver. Resmi dokümantasyon ve güçlü kaynaklardan yararlan. Gerekirse tam dosya kodu üret, hatayı kök nedenle açıkla ve çözümü doğrudan uygulatılabilir yaz.');
     }
 
     if (skills.includes('data-analysis')) {
@@ -1118,7 +1266,7 @@ function removeUnsupportedVersionClaims(text = '', sources = []) {
 
 function finalizeAnswer({ text, skills, lessons = [], webSources, originalMessage }) {
     const sanitized = sanitizeAssistantText(text);
-    const researchMode = skills.includes('web-search') || lessons.length > 0;
+    const researchMode = skills.includes('web-search') || lessons.length > 0 || shouldUseDefaultResearch(originalMessage);
 
     if (!researchMode) {
         return sanitized;
@@ -1134,6 +1282,11 @@ function finalizeAnswer({ text, skills, lessons = [], webSources, originalMessag
 
     const grounded = removeUnsupportedVersionClaims(sanitized, webSources);
     if (!grounded) return createResearchAnswer(originalMessage, webSources);
+
+    if (skills.includes('coding') && /```/.test(grounded)) {
+        const codingBody = stripExistingSourcesSection(grounded);
+        return sanitizeAssistantText(`${codingBody}\n\n${formatResearchSources(webSources)}`);
+    }
 
     const body = formatResearchBody(grounded);
     if (!body) return createResearchAnswer(originalMessage, webSources);
@@ -1297,7 +1450,7 @@ module.exports = async function handler(req, res) {
 
     if (!anthropicConfig && apiKeys.length === 0) {
         return res.status(200).json({
-            text: (skills.includes('web-search') || lessons.length > 0)
+            text: (skills.includes('web-search') || lessons.length > 0 || shouldUseDefaultResearch(message))
                 ? createResearchAnswer(message, webSources)
                 : createFallbackAnswer(message, skills, lessons),
             offline: true
@@ -1410,7 +1563,7 @@ module.exports = async function handler(req, res) {
 
     console.warn('Gemini cevap vermedi, yedek yanıt kullanılıyor:', lastError);
     return res.status(200).json({
-        text: (skills.includes('web-search') || lessons.length > 0)
+        text: (skills.includes('web-search') || lessons.length > 0 || shouldUseDefaultResearch(message))
             ? createResearchAnswer(message, webSources)
             : createFallbackAnswer(message, skills, lessons),
         offline: true
