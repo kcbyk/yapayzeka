@@ -72,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const CONFIG = {
         useRealAPI: true, // Artık gerçek API'leri kullanabiliriz
-        apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+        apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
     };
 
     function updateQuotaUI() {
@@ -244,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let aiResponseText = "";
             
             // API ÇAĞRISI (Failover Destekli)
-            const callAPI = async (text) => {
+            const callAPI = async (text, retryCount = 0) => {
                 const url = `${CONFIG.apiEndpoint}?key=${API_MANAGER.getCurrentKey()}`;
                 const response = await fetch(url, {
                     method: 'POST',
@@ -255,18 +255,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 if (!response.ok) {
-                    if (response.status === 429) { // Kota Bitti
+                    let errorData = {};
+                    try {
+                        errorData = await response.json();
+                    } catch (_) {
+                        errorData = {};
+                    }
+
+                    const errorStatus = errorData?.error?.status || '';
+                    const errorMessage = errorData?.error?.message || '';
+                    const shouldRetrySameKey = response.status >= 500 && retryCount < 2;
+                    const shouldTryNextKey =
+                        response.status === 429 ||
+                        response.status === 403 ||
+                        errorStatus === 'RESOURCE_EXHAUSTED' ||
+                        /quota|rate limit|api key|permission/i.test(errorMessage);
+
+                    if (shouldRetrySameKey) {
+                        addThinkingStep("Sunucu yoğun, tekrar deneniyor...");
+                        await wait(1000 * (retryCount + 1));
+                        return await callAPI(text, retryCount + 1);
+                    }
+
+                    if (shouldTryNextKey) { // Kota veya anahtar sorunu
                         addThinkingStep("Kota bitti, sonraki anahtara geçiliyor...");
                         if (API_MANAGER.switchToNextKey()) {
                             return await callAPI(text); // Yeni anahtarla tekrar dene
                         }
                     }
-                    throw new Error('API Hatası');
+                    throw new Error(errorMessage || 'API Hatası');
                 }
 
                 const data = await response.json();
+                const textPart = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!textPart) {
+                    throw new Error('API yanıtı boş geldi');
+                }
                 API_MANAGER.trackUsage();
-                return data.candidates[0].content.parts[0].text;
+                return textPart;
             };
 
             // Yazılım Yeteneği Aktifse Kod Kontrolü Yap
