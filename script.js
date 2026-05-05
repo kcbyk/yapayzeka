@@ -21,6 +21,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const inputModelMenu = getEl('inputModelMenu');
     const skillsBtn = getEl('skillsBtn');
     const skillsMenu = getEl('skillsMenu');
+    const lessonsBtn = getEl('lessonsBtn');
+    const lessonsMenu = getEl('lessonsMenu');
     const menuAttachBtn = getEl('menuAttachBtn');
     const menuGalleryBtn = getEl('menuGalleryBtn');
     const menuCameraBtn = getEl('menuCameraBtn');
@@ -146,6 +148,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (plusMenuBtn) plusMenuBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (inputModelMenu) inputModelMenu.classList.add('hidden');
+        if (skillsMenu) skillsMenu.classList.add('hidden');
+        if (lessonsMenu) lessonsMenu.classList.add('hidden');
         if (plusMenu) plusMenu.classList.toggle('hidden');
     });
 
@@ -153,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
         if (plusMenu) plusMenu.classList.add('hidden');
         if (skillsMenu) skillsMenu.classList.add('hidden');
+        if (lessonsMenu) lessonsMenu.classList.add('hidden');
         if (inputModelMenu) inputModelMenu.classList.toggle('hidden');
     });
 
@@ -160,13 +165,23 @@ document.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
         if (plusMenu) plusMenu.classList.add('hidden');
         if (inputModelMenu) inputModelMenu.classList.add('hidden');
+        if (lessonsMenu) lessonsMenu.classList.add('hidden');
         if (skillsMenu) skillsMenu.classList.toggle('hidden');
+    });
+
+    if (lessonsBtn) lessonsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (plusMenu) plusMenu.classList.add('hidden');
+        if (inputModelMenu) inputModelMenu.classList.add('hidden');
+        if (skillsMenu) skillsMenu.classList.add('hidden');
+        if (lessonsMenu) lessonsMenu.classList.toggle('hidden');
     });
 
     document.addEventListener('click', () => {
         if (plusMenu) plusMenu.classList.add('hidden');
         if (inputModelMenu) inputModelMenu.classList.add('hidden');
         if (skillsMenu) skillsMenu.classList.add('hidden');
+        if (lessonsMenu) lessonsMenu.classList.add('hidden');
     });
 
     if (menuAttachBtn) menuAttachBtn.addEventListener('click', () => fileInput && fileInput.click());
@@ -214,8 +229,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    const lessonOpts = document.querySelectorAll('.lesson-opt');
+    lessonOpts.forEach(opt => {
+        opt.addEventListener('click', (e) => {
+            e.stopPropagation();
+            opt.classList.toggle('active');
+            const lessonName = opt.querySelector('span').textContent;
+            console.log(`Ders ${opt.classList.contains('active') ? 'Aktif' : 'Pasif'}: ${lessonName}`);
+        });
+    });
+
     const getActiveSkills = () => Array.from(document.querySelectorAll('.skill-opt.active'))
         .map(opt => opt.getAttribute('data-skill'))
+        .filter(Boolean);
+
+    const getActiveLessons = () => Array.from(document.querySelectorAll('.lesson-opt.active'))
+        .map(opt => opt.getAttribute('data-lesson'))
         .filter(Boolean);
 
     // 5. MESAJLAŞMA MANTIĞI
@@ -233,12 +262,14 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleAIResponse(userText) {
         showThinking();
         if (thinkingSteps) thinkingSteps.innerHTML = '';
+        const activeSkills = getActiveSkills();
+        const activeLessons = getActiveLessons();
+
         try {
             addThinkingStep("İşlem başlatılıyor...");
             await wait(600);
             
             let aiResponseText = "";
-            const activeSkills = getActiveSkills();
             
             // API ÇAĞRISI (Failover Destekli)
             const callAPI = async (text) => {
@@ -251,7 +282,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 message: text,
-                                skills: activeSkills
+                                skills: activeSkills,
+                                lessons: activeLessons
                             })
                         });
 
@@ -288,6 +320,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (activeSkills.includes('data-analysis')) {
                 addThinkingStep("Veri analizi modu aktif...");
             }
+            if (activeLessons.length > 0) {
+                addThinkingStep("Ders kaynakları ve seviye ayarı hazırlanıyor...");
+            }
 
             aiResponseText = await callAPI(userText);
 
@@ -296,22 +331,42 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             hideThinking();
             console.error("API Hatası:", error);
-            addMessageCard(createFallbackAnswer(userText, activeSkills), 'ai');
+            addMessageCard(createFallbackAnswer(userText, activeSkills, activeLessons), 'ai');
         }
     }
 
-    function createFallbackAnswer(userText, activeSkills = []) {
+    function createFallbackAnswer(userText, activeSkills = [], activeLessons = []) {
         const cleanText = userText.trim();
         const skillNames = {
             'web-search': "Web'de Derin Arama",
             coding: 'Yazılım Geliştirme',
             'data-analysis': 'Veri Analizi'
         };
-        const activeSkillText = activeSkills
-            .map(skill => skillNames[skill])
-            .filter(Boolean)
-            .join(', ');
-        const skillSuffix = activeSkillText ? `\n\nAktif yetenekler: ${activeSkillText}.` : '';
+        const lessonNames = {
+            'level-primary': '1-4. Sınıf',
+            'level-middle': '5-8. Sınıf',
+            'level-high': 'Lise',
+            'level-university': 'Üniversite',
+            'level-graduate': 'Yüksek Lisans',
+            math: 'Matematik',
+            physics: 'Fizik',
+            chemistry: 'Kimya',
+            biology: 'Biyoloji',
+            turkish: 'Türkçe ve Edebiyat',
+            history: 'Tarih',
+            geography: 'Coğrafya',
+            english: 'İngilizce',
+            philosophy: 'Felsefe',
+            software: 'Yazılım ve Bilgisayar',
+            economics: 'Ekonomi',
+            law: 'Hukuk',
+            medicine: 'Tıp ve Sağlık'
+        };
+        const activeSkillText = [
+            ...activeSkills.map(skill => skillNames[skill]).filter(Boolean),
+            ...activeLessons.map(lesson => lessonNames[lesson]).filter(Boolean)
+        ].join(', ');
+        const skillSuffix = activeSkillText ? `\n\nAktif modlar: ${activeSkillText}.` : '';
 
         if (/^(merhaba|selam|sa|slm|hello|hi)\b/i.test(cleanText)) {
             return `Merhaba! Buradayım. Ne yapmak istediğini yaz, birlikte çözelim.${skillSuffix}`;

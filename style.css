@@ -294,6 +294,32 @@ body {
     border-left: 3px solid var(--neon-white);
 }
 
+.lessons-menu {
+    width: 250px;
+    max-height: 58vh;
+    overflow-y: auto;
+}
+
+.menu-section-label {
+    padding: 8px 12px 6px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    color: rgba(255, 255, 255, 0.38);
+}
+
+.plus-menu-item.lesson-opt {
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.plus-menu-item.lesson-opt.active {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: var(--neon-white);
+    border-left: 3px solid var(--neon-white);
+}
+
 /* Kota Göstergesi */
 .quota-container {
     position: relative;
