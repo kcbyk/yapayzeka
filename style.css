@@ -1,0 +1,791 @@
+:root {
+    --bg-color: #070803;
+    --text-color: #cdcdcc;
+    --card-bg: #2a2a2a;
+    --sidebar-bg: #1c1c1c;
+    --neon-white: #ffffff;
+    --input-bg: #1a1a1a;
+    --accent-color: #ffffff;
+    --deepseek-bg: #181818; /* DeepSeek benzeri koyu gri arka plan */
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Header */
+.header {
+    padding: 0.8rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: var(--bg-color);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    z-index: 10;
+}
+
+.header-left-group, .header-right-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.header-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-color);
+    margin-left: 8px;
+}
+
+/* Model Seçim Menüsü Geliştirmeleri */
+.plus-menu-item.model-opt {
+    position: relative;
+    padding-left: 40px; /* İkon/Tik alanı için */
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.plus-menu-item.model-opt.selected {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-weight: 600;
+}
+
+/* Seçili modelin solundaki tik işareti */
+.plus-menu-item.model-opt::before {
+    content: '';
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%) scale(0);
+    width: 12px;
+    height: 12px;
+    background-color: var(--neon-white);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--neon-white);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.plus-menu-item.model-opt.selected::before {
+    transform: translateY(-50%) scale(1);
+}
+
+/* Seçim animasyonu */
+@keyframes selectPop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.plus-menu-item.model-opt.selected {
+    animation: selectPop 0.3s ease-out;
+}
+
+/* Header Model Selector Kaldırıldı */
+
+/* Header Right Buttons */
+.header-icon-btn {
+    background: none;
+    border: none;
+    padding: 8px;
+    color: var(--text-color);
+    cursor: pointer;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.header-icon-btn:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.header-icon-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+.user-avatar {
+    width: 32px;
+    height: 32px;
+    background: #4a4a4a;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: white;
+    margin-left: 8px;
+}
+
+.icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Sidebar */
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: -280px;
+    width: 280px;
+    height: 100%;
+    background-color: var(--sidebar-bg);
+    z-index: 100;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    box-shadow: 5px 0 15px rgba(0, 0, 0, 0.5);
+}
+
+.sidebar.active {
+    left: 0;
+}
+
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 1.5rem;
+}
+
+.new-chat-btn {
+    flex: 1;
+    padding: 10px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.sidebar-sections {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding-top: 10px;
+}
+
+.sidebar-section {
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-section h3 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.3);
+    margin-bottom: 0.6rem;
+    padding-left: 8px;
+    font-weight: 700;
+}
+
+.chat-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.chat-item {
+    padding: 10px 12px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: #ccc;
+    transition: background-color 0.2s;
+    border: 1px solid transparent;
+}
+
+.chat-item:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.chat-item.active {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Plus Menu Stilleri */
+.plus-menu {
+    position: absolute;
+    bottom: calc(100% + 20px); /* Biraz daha yukarıda dursun */
+    left: 0;
+    width: 200px;
+    background-color: #1e1e1e;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    z-index: 9999; /* En üstte olmalı */
+    animation: menuFadeUp 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.plus-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+    color: var(--text-color);
+    font-size: 0.9rem;
+}
+
+.plus-menu-item:active {
+    transform: scale(0.98);
+}
+
+.plus-menu-item:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
+.plus-menu-item svg {
+    width: 18px;
+    height: 18px;
+}
+
+.plus-menu-item.selected {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-weight: 600;
+}
+
+/* Yetenekler menüsü için özel seçim ikonu */
+.plus-menu-item.skill-opt {
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.plus-menu-item.skill-opt.active {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: var(--neon-white);
+    border-left: 3px solid var(--neon-white);
+}
+
+/* Kota Göstergesi */
+.quota-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 10px;
+}
+
+.quota-ring {
+    transform: rotate(-90deg);
+}
+
+.quota-ring-bg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.1);
+    stroke-width: 3;
+}
+
+.quota-ring-fill {
+    fill: none;
+    stroke: var(--neon-white);
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.3s ease;
+}
+
+#quotaText {
+    position: absolute;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--text-color);
+}
+
+/* Kod Bloğu ve Aksiyonlar */
+.code-container {
+    position: relative;
+    background: #121212;
+    border-radius: 8px;
+    margin: 10px 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+}
+
+.code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #1e1e1e;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.code-lang {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.code-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.code-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.code-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.code-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+pre {
+    padding: 12px;
+    overflow-x: auto;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.9rem;
+    color: #e0e0e0;
+}
+
+.overlay {
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    border-radius: 4px;
+}
+
+.action-btn:hover {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.action-btn.pinned {
+    color: var(--neon-white);
+}
+
+.action-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 90;
+    display: none;
+}
+
+.overlay.active {
+    display: block;
+}
+
+/* Chat History */
+.main-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-history {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+/* NEON CARD ANIMATION */
+.message-card {
+    position: relative;
+    padding: 1.2rem;
+    background-color: var(--card-bg);
+    border-radius: 12px;
+    max-width: 85%;
+    color: white;
+    font-weight: 600;
+    overflow: hidden; /* Animasyonun dışarı taşmaması için */
+}
+
+/* Sonsuz dönen neon ışık efekti */
+.message-card::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(
+        transparent, 
+        transparent, 
+        transparent, 
+        var(--neon-white)
+    );
+    animation: rotate 4s linear infinite;
+    z-index: 0;
+}
+
+.message-card::after {
+    content: '';
+    position: absolute;
+    inset: 3px; /* Sınır kalınlığı */
+    background: var(--deepseek-bg); /* Kullanıcı kartı arka planı da DeepSeek rengi oldu */
+    border-radius: 10px;
+    z-index: 1;
+}
+
+.card-content {
+    position: relative;
+    z-index: 2;
+}
+
+@keyframes rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.user-card {
+    align-self: flex-end;
+}
+
+.ai-card {
+    align-self: flex-start;
+    background-color: var(--deepseek-bg); /* DeepSeek tarzı arka plan */
+    padding: 1.2rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05); /* Çok hafif belirgin sınır */
+    max-width: 85%;
+}
+
+.ai-card::before, .ai-card::after {
+    display: none; /* AI kartında neon dönme efekti olmasın */
+}
+
+.ai-card .card-content {
+    color: var(--text-color);
+    font-weight: 400;
+    line-height: 1.6;
+}
+
+/* Input Area */
+.input-area {
+    padding: 1rem;
+    /* Alt bar/home butonu için boşluk bırakır */
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); 
+    background-color: var(--bg-color);
+    position: sticky;
+    bottom: 0;
+    z-index: 50;
+}
+
+.input-container {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    background-color: var(--input-bg);
+    border-radius: 12px;
+    padding: 6px 10px;
+    /* overflow: hidden; KALDIRILDI - Menülerin gözükmesi için */
+    box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.5); 
+}
+
+/* Neon arka plan için yeni katman */
+.input-neon-bg {
+    position: absolute;
+    inset: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.input-neon-bg::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(
+        transparent, 
+        transparent, 
+        transparent, 
+        var(--neon-white)
+    );
+    animation: rotate 6s linear infinite;
+}
+
+.input-neon-bg::after {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    background: var(--input-bg);
+    border-radius: 10px;
+}
+
+.input-actions-left, .input-actions-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    position: relative;
+    z-index: 5; /* Z-index artırıldı */
+    padding-bottom: 4px;
+    /* overflow: visible; Garantiye alalım */
+}
+
+.action-icon-btn {
+    background: none;
+    border: none;
+    padding: 8px;
+    color: var(--text-color);
+    cursor: pointer;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.action-icon-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+.action-icon-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+textarea, .send-btn {
+    position: relative;
+    z-index: 2;
+}
+
+textarea {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 1rem;
+    resize: none;
+    outline: none;
+    padding: 8px 0;
+    max-height: 150px;
+    min-height: 40px;
+}
+
+.send-btn {
+    background: var(--neon-white);
+    border: none;
+    color: var(--bg-color);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.send-btn:active {
+    transform: scale(0.9);
+}
+
+.send-btn svg {
+    width: 18px;
+    height: 18px;
+    margin-left: 2px;
+}
+
+/* Typing & Thinking Indicator */
+.thinking-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    align-self: flex-start;
+    max-width: 85%;
+}
+
+.thinking-status {
+    font-size: 0.85rem;
+    color: var(--text-color);
+    font-style: italic;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.thinking-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--neon-white);
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+}
+
+.thinking-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 14px;
+    border-left: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
+.step-item {
+    font-size: 0.8rem;
+    color: rgba(205, 205, 204, 0.6);
+    animation: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.1); }
+    100% { opacity: 0.3; transform: scale(0.8); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Modal Stilleri */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(5px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    transition: opacity 0.3s ease;
+}
+
+.modal-content {
+    background-color: #1e1e1e;
+    width: 100%;
+    max-width: 500px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalSlideUp 0.3s ease-out;
+}
+
+@keyframes modalSlideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.modal-header {
+    padding: 1.2rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.modal-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.modal-body {
+    padding: 1.5rem;
+    color: var(--text-color);
+    line-height: 1.6;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.setting-info h4 {
+    font-size: 0.95rem;
+    color: #fff;
+    margin-bottom: 4px;
+}
+
+.setting-info p {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* Mobile Optimizations */
+@media (max-width: 480px) {
+    .message-card {
+        max-width: 95%;
+    }
+}

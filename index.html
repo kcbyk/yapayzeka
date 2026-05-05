@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI_Chat_Pro</title>
+    <!-- Google Font: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Yan Menü (Sohbet Geçmişi) -->
+    <aside id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <button id="closeSidebar" class="icon-btn">✕</button>
+            <button id="newChatBtn" class="new-chat-btn">+ Yeni Sohbet</button>
+        </div>
+        <div class="sidebar-sections">
+            <div class="sidebar-section">
+                <h3>Sabitlenenler</h3>
+                <div class="chat-list" id="pinnedChatList"></div>
+            </div>
+            <div class="sidebar-section">
+                <h3>Sohbetler</h3>
+                <div class="chat-list" id="chatList"></div>
+            </div>
+        </div>
+    </aside>
+
+    <div class="overlay" id="overlay"></div>
+
+    <header class="header">
+        <div class="header-left-group">
+            <button id="menuBtn" class="icon-btn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7b7b7a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+            <h1 class="header-title">AI Assistant</h1>
+        </div>
+        
+        <div class="header-right-group">
+            <div class="quota-container" title="Kalan Kota">
+                <svg width="24" height="24" viewBox="0 0 36 36" class="quota-ring">
+                    <path class="quota-ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    <path class="quota-ring-fill" id="quotaFill" stroke-dasharray="100, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                </svg>
+                <span id="quotaText">100%</span>
+            </div>
+            <button class="header-icon-btn" id="extensionsBtn" title="Uzantılar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                </svg>
+            </button>
+            <button class="header-icon-btn" id="settingsBtn" title="Ayarlar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+            </button>
+            <div class="user-avatar" id="userBtn">
+                <span>S</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Modal Pencereler -->
+    <div id="modalContainer" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Başlık</h2>
+                <button id="modalClose" class="icon-btn">✕</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- İçerik dinamik olarak değişecek -->
+            </div>
+        </div>
+    </div>
+
+    <main class="main-container">
+        <div class="chat-history" id="chatHistory">
+            <!-- Mesaj Kartları Buraya Gelecek -->
+        </div>
+        
+        <div id="thinkingIndicator" class="thinking-container hidden">
+            <div class="thinking-status">
+                <div class="thinking-dot"></div>
+                <span id="thinkingText">Yapay zeka düşünüyor...</span>
+            </div>
+            <div class="thinking-steps" id="thinkingSteps">
+                <!-- Adımlar buraya eklenecek -->
+            </div>
+        </div>
+    </main>
+
+    <footer class="input-area">
+        <form id="chatForm" class="input-container">
+            <div class="input-neon-bg"></div>
+            <div class="input-actions-left">
+                <input type="file" id="fileInput" hidden accept="image/*,.pdf,.doc,.docx,.txt">
+                <button type="button" id="plusMenuBtn" class="action-icon-btn" title="Ekle">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                </button>
+                <div class="plus-menu hidden" id="plusMenu">
+                    <div class="plus-menu-item" id="menuAttachBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                        <span>Dosya</span>
+                    </div>
+                    <div class="plus-menu-item" id="menuGalleryBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                        <span>Galeri</span>
+                    </div>
+                    <div class="plus-menu-item" id="menuCameraBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                        <span>Fotoğraf</span>
+                    </div>
+                </div>
+                <button type="button" id="inputModelBtn" class="action-icon-btn" title="Model Seç">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+                    </svg>
+                </button>
+                <div class="plus-menu hidden" id="inputModelMenu">
+                    <div class="plus-menu-item model-opt selected" data-model="Gemini 2.5 Flash">
+                        <span>Gemini 2.5 Flash</span>
+                    </div>
+                </div>
+                <button type="button" id="skillsBtn" class="action-icon-btn" title="Yetenekler">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="16 18 22 12 16 6"></polyline>
+                        <polyline points="8 6 2 12 8 18"></polyline>
+                    </svg>
+                </button>
+                <div class="plus-menu hidden" id="skillsMenu">
+                    <div class="plus-menu-item skill-opt" data-skill="web-search">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        <span>Web'de Derin Arama</span>
+                    </div>
+                    <div class="plus-menu-item skill-opt" data-skill="coding">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                        <span>Yazılım Geliştirme</span>
+                    </div>
+                    <div class="plus-menu-item skill-opt" data-skill="data-analysis">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+                        <span>Veri Analizi</span>
+                    </div>
+                </div>
+            </div>
+            
+            <textarea id="messageInput" placeholder="Mesajınızı buraya yazın..." rows="1"></textarea>
+            
+            <div class="input-actions-right">
+                <button type="button" id="voiceBtn" class="action-icon-btn" title="Sesli Konuşma">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                    </svg>
+                </button>
+                <button type="submit" class="send-btn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </div>
+        </form>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
