@@ -9,8 +9,10 @@ const ANTHROPIC_DEFAULT_MODEL = 'claude-opus-4-6-thinking';
 
 const SYSTEM_PROMPT = `Sen Solenz AI adında, Türkçe konuşan yardımcı bir yapay zeka asistanısın.
 Kısa, net, çözüm odaklı ve kullanıcıya yakın cevap ver.
-Kod bloğu dışında Markdown kullanma. Yıldız, başlık işareti, tablo çizgisi, emoji ve dekoratif karakter kullanma.
-Yanıtı düz Türkçe metinle yaz. Gerektiğinde kısa başlıkları iki nokta ile bitir.
+Kod bloğu dışında yıldızlı Markdown, # başlık işareti, tablo çizgisi, emoji ve dekoratif karakter kullanma.
+Yanıtı düz Türkçe metinle yaz. Gerektiğinde kısa başlıkları iki nokta ile bitir ve maddeleri yalnızca "- " ile başlat.
+Bir konu bittiğinde boş satır bırak, sonra yeni başlığa geç.
+Kaynakları anlatımın içine karıştırma; kaynakları sadece en sondaki ayrı Kaynaklar bölümünde yaz.
 Türkçe karakterleri düzgün kullan: ş, ğ, ü, ö, ç, ı.`;
 
 const SKILL_LABELS = {
@@ -671,7 +673,7 @@ async function buildPrompt({ message, skills }) {
     let webSources = [];
 
     if (skills.includes('web-search')) {
-        skillLines.push("- Web'de Derin Arama aktif: Aşağıdaki web kaynaklarını kullan. Cevabın sonunda mutlaka 'Kaynaklar' bölümü yaz; her kaynak için URL ve güven puanını belirt. Resmi/otoriter kaynak 100/100 değilse kesin konuşma; 'kaynak güveni sınırlı' diye belirt. Kaynak yoksa uydurma bilgi verme. Markdown, yıldız, tablo ve dekoratif karakter kullanma.");
+        skillLines.push("- Web'de Derin Arama aktif: Aşağıdaki web kaynaklarını kullan. Yanıtı başlık başlık ve '- ' maddeleriyle yaz. Her başlık arasında boş satır bırak. Kaynak URL'lerini ve güven puanlarını anlatımın içine karıştırma; bunları sadece en sondaki ayrı 'Kaynaklar' bölümünde yaz. Resmi/otoriter kaynak 100/100 değilse kesin konuşma; 'kaynak güveni sınırlı' diye belirt. Kaynak yoksa uydurma bilgi verme. Yıldız, tablo, # başlık ve dekoratif karakter kullanma.");
 
         webSources = await collectWebSources(message);
         if (webSources.length > 0) {
@@ -723,7 +725,7 @@ function sanitizePlainTextSegment(value = '') {
         .replace(/^\s{0,3}>\s?/gm, '')
         .replace(/^\s*[-*_]{3,}\s*$/gm, '')
         .replace(/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/gm, '')
-        .replace(/^\s*[*+-]\s+/gm, '')
+        .replace(/^\s*[*+]\s+/gm, '')
         .replace(/`([^`\n]+)`/g, '$1')
         .replace(/\*\*/g, '')
         .replace(/__/g, '')
@@ -774,6 +776,123 @@ function extractSourceFact(source) {
     return truncateText(sentences.slice(0, 2).join(' '), 420);
 }
 
+function normalizeHeading(line = '') {
+    const cleanLine = sanitizePlainTextSegment(line)
+        .replace(/^[-\d.\s]+/, '')
+        .replace(/:+$/, '')
+        .trim();
+
+    return cleanLine ? `${cleanLine}:` : '';
+}
+
+function isLikelyHeading(line = '') {
+    const cleanLine = sanitizePlainTextSegment(line)
+        .replace(/^[-\d.\s]+/, '')
+        .trim();
+
+    if (!cleanLine || /^https?:\/\//i.test(cleanLine)) return false;
+    if (/:$/.test(cleanLine)) return true;
+    if (/[.!?]$/.test(cleanLine)) return false;
+
+    const words = cleanLine.split(/\s+/).length;
+    return cleanLine.length <= 70 && words <= 8;
+}
+
+function splitIntoBulletFacts(text = '') {
+    const cleaned = sanitizePlainTextSegment(text)
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!cleaned) return [];
+
+    const sentences = cleaned.match(/[^.!?]+[.!?]?/g) || [cleaned];
+    const bullets = [];
+    let current = '';
+
+    for (const sentence of sentences.map((part) => part.trim()).filter(Boolean)) {
+        if (!current) {
+            current = sentence;
+            continue;
+        }
+
+        if (`${current} ${sentence}`.length > 260) {
+            bullets.push(current);
+            current = sentence;
+        } else {
+            current = `${current} ${sentence}`;
+        }
+    }
+
+    if (current) bullets.push(current);
+    return bullets.slice(0, 12);
+}
+
+function appendBulletSection(output, text) {
+    const lines = String(text || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    if (lines.some((line) => /^-\s+/.test(line))) {
+        lines.forEach((line) => {
+            output.push(/^-\s+/.test(line) ? sanitizePlainTextSegment(line) : `- ${sanitizePlainTextSegment(line)}`);
+        });
+        output.push('');
+        return;
+    }
+
+    splitIntoBulletFacts(text).forEach((fact) => {
+        output.push(`- ${fact}`);
+    });
+    output.push('');
+}
+
+function formatResearchBody(body = '', fallbackTitle = 'Araştırma Özeti') {
+    const cleanBody = stripExistingSourcesSection(sanitizeAssistantText(body));
+    if (!cleanBody) return '';
+
+    const chunks = cleanBody
+        .split(/\n{2,}/)
+        .map((chunk) => chunk.trim())
+        .filter(Boolean);
+
+    const output = [];
+    let hasHeading = false;
+
+    for (const chunk of chunks) {
+        const lines = chunk.split('\n').map((line) => line.trim()).filter(Boolean);
+        if (!lines.length) continue;
+
+        if (lines.length === 1 && isLikelyHeading(lines[0])) {
+            output.push(normalizeHeading(lines[0]));
+            output.push('');
+            hasHeading = true;
+            continue;
+        }
+
+        if (isLikelyHeading(lines[0])) {
+            output.push(normalizeHeading(lines[0]));
+            output.push('');
+            appendBulletSection(output, lines.slice(1).join(' '));
+            hasHeading = true;
+            continue;
+        }
+
+        if (!hasHeading) {
+            output.push(`${fallbackTitle}:`);
+            output.push('');
+            hasHeading = true;
+        }
+
+        appendBulletSection(output, chunk);
+    }
+
+    return output
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
 function formatResearchSources(sources = []) {
     if (!sources.length) {
         return 'Kaynaklar:\nGüvenilir kaynak bulunamadı.';
@@ -781,38 +900,57 @@ function formatResearchSources(sources = []) {
 
     return [
         'Kaynaklar:',
+        '',
         ...sources.slice(0, MAX_RESEARCH_SOURCES).flatMap((source, index) => [
-            `Kaynak ${index + 1}: ${source.title}`,
-            `Adres: ${normalizeSourceUrl(source.url)}`,
-            `Güven: ${sourceScoreLabel(source.score)}`
+            `Kaynak ${index + 1}:`,
+            `- Başlık: ${source.title}`,
+            `- Adres: ${normalizeSourceUrl(source.url)}`,
+            `- Güven: ${sourceScoreLabel(source.score)}`,
+            ''
         ])
     ].join('\n');
 }
 
 function createNoSourceResearchAnswer() {
-    return 'Araştırma sonucu:\nWeb araması denendi ama bu istek için güvenilir kaynak alınamadı. Bu yüzden kesin bilgi gibi konuşmuyorum. Konuyu biraz daha net yazarsan yeniden arayabilirim.';
+    return 'Araştırma Sonucu:\n\n- Web araması denendi ama bu istek için güvenilir kaynak alınamadı.\n- Bu yüzden kesin bilgi gibi konuşmuyorum.\n- Konuyu biraz daha net yazarsan yeniden arayabilirim.';
 }
 
 function createResearchAnswer(message, sources = []) {
     if (!sources.length) return createNoSourceResearchAnswer(message);
 
+    const primaryToken = cleanSearchQuery(message)
+        .toLocaleLowerCase('tr-TR')
+        .split(/\s+/)
+        .find((token) => token.length >= 4) || '';
+
     const factLines = sources
+        .map((source) => ({
+            source,
+            fact: extractSourceFact(source)
+        }))
+        .filter(({ source, fact }) => {
+            if (!fact) return false;
+            if (!primaryToken) return true;
+            return source.score >= 85 || fact.toLocaleLowerCase('tr-TR').includes(primaryToken);
+        })
         .slice(0, 3)
-        .map((source, index) => {
-            const fact = extractSourceFact(source);
-            return fact ? `Kaynak ${index + 1} sonucu: ${fact}` : '';
+        .map((source) => {
+            return `- ${source.fact}`;
         })
         .filter(Boolean);
 
-    const confidenceLine = sources[0].score >= 100
+    const confidenceBullet = sources[0].score >= 100
         ? 'Güven notu: En güçlü kaynak resmi ya da otoriter görünüyor; yine de güncel konularda kaynağın kendi sayfasını esas almak gerekir.'
         : 'Güven notu: Kaynaklar yardımcı ama 100/100 resmi kaynak düzeyinde olmadığı için kesin hüküm gibi sunmuyorum.';
 
     return sanitizeAssistantText([
-        'Araştırma sonucu:',
-        factLines.length ? factLines.join('\n') : 'Toplanan kaynaklarda kısa özet çıkarılabilecek sınırlı bilgi var.',
+        'Araştırma Özeti:',
         '',
-        confidenceLine,
+        factLines.length ? factLines.join('\n') : '- Toplanan kaynaklarda kısa özet çıkarılabilecek sınırlı bilgi var.',
+        '',
+        'Güven Notu:',
+        '',
+        `- ${confidenceBullet.replace(/^Güven notu:\s*/i, '')}`,
         '',
         formatResearchSources(sources)
     ].join('\n'));
@@ -864,7 +1002,7 @@ function finalizeAnswer({ text, skills, webSources, originalMessage }) {
     const grounded = removeUnsupportedVersionClaims(sanitized, webSources);
     if (!grounded) return createResearchAnswer(originalMessage, webSources);
 
-    const body = stripExistingSourcesSection(grounded);
+    const body = formatResearchBody(grounded);
     if (!body) return createResearchAnswer(originalMessage, webSources);
 
     return sanitizeAssistantText(`${body}\n\n${formatResearchSources(webSources)}`);
